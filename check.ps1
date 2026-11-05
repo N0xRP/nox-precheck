@@ -2,16 +2,36 @@
 # ==============================================================================
 # NOX RP - Security & Service Integrity PRE-CHECK
 # Desenvolvido por: Nev3rFlame
-# Versao: 2.0
 #
 # Esta ferramenta e apenas um pre-check informativo e de leitura.
 # Nao altera servicos, registo, politicas, ficheiros ou configuracoes do Windows.
 # Nao deteta cheats e nao substitui o PC Check realizado pela Staff.
 # ==============================================================================
 
-$ServerName = 'NOX RP'
-$Author = 'Nev3rFlame'
-$ScriptVersion = '2.0'
+# Identidade codificada em hexadecimal. O checksum 947 confirma apenas o texto do autor;
+# nao e uma assinatura criptografica nem protege as restantes funcoes do script.
+$ServerName = -join [char[]]@(0x4E,0x4F,0x58,0x20,0x52,0x50)
+$Author = -join [char[]]@(0x4E,0x65,0x76,0x33,0x72,0x46,0x6C,0x61,0x6D,0x65)
+
+function Get-TextChecksum {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $sum = 0
+    foreach ($character in $Text.ToCharArray()) {
+        $sum += [int][char]$character
+    }
+    return $sum
+}
+
+$BrandingValid = (
+    $ServerName.Length -eq 6 -and (Get-TextChecksum -Text $ServerName) -eq 439 -and
+    $Author.Length -eq 10 -and (Get-TextChecksum -Text $Author) -eq 947
+)
+
+if (-not $BrandingValid) {
+    Write-Host '[ERRO] O marcador de identidade NOX RP / Nev3rFlame nao corresponde ao esperado.' -ForegroundColor Red
+    Write-Host 'Esta verificacao e apenas um controlo de identidade textual, nao uma protecao criptografica.' -ForegroundColor Yellow
+    return
+}
 
 $RequiredServices = @(
     'PcaSvc',
@@ -26,7 +46,7 @@ $RequiredServices = @(
 )
 
 try {
-    $Host.UI.RawUI.WindowTitle = "$ServerName | Security Guard $ScriptVersion - by $Author"
+    $Host.UI.RawUI.WindowTitle = "$ServerName | Security Guard - by $Author"
 } catch {
     # Alguns hosts PowerShell nao disponibilizam WindowTitle.
 }
@@ -291,11 +311,36 @@ function Test-Tpm20 {
         -Detail 'Foi detetado um TPM 2.0, mas nao foi possivel confirmar se esta pronto.' -Code 1)
 }
 
+function Write-PanelTitle {
+    param([string]$Title)
+
+    Write-Host ''
+    Write-Host ('  +-' + ('-' * 68) + '-+') -ForegroundColor DarkMagenta
+    Write-Host ('  | {0,-68} |' -f $Title) -ForegroundColor Magenta
+    Write-Host ('  +-' + ('-' * 68) + '-+') -ForegroundColor DarkMagenta
+}
+
+function Write-CheckLine {
+    param([psobject]$Result, [string]$Prefix = '  ')
+
+    $color = Get-StatusColor -Code $Result.Code
+    $tag = switch ($Result.Code) {
+        0 { '[ OK ]' }
+        1 { '[ ?  ]' }
+        default { '[ !! ]' }
+    }
+
+    Write-Host ($Prefix + $tag + ' ') -NoNewline -ForegroundColor $color
+    Write-Host $Result.Name -ForegroundColor White
+    if (-not [string]::IsNullOrWhiteSpace($Result.Detail)) {
+        Write-Host ($Prefix + '       ' + $Result.Detail) -ForegroundColor DarkGray
+    }
+}
+
 function Show-PreCheck {
     try { Clear-Host } catch { }
 
     $now = Get-Date
-    $os = $null
     try {
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
     } catch {
@@ -323,74 +368,80 @@ function Show-PreCheck {
     $failedCount = @($allResults | Where-Object { $_.Code -eq 2 }).Count
     $pendingCount = @($allResults | Where-Object { $_.Code -eq 1 }).Count
     $passedCount = @($allResults | Where-Object { $_.Code -eq 0 }).Count
+    $totalCount = $allResults.Count
+    $barWidth = 30
+    $barFilled = 0
+    if ($totalCount -gt 0) {
+        $barFilled = [int][Math]::Round(($passedCount / $totalCount) * $barWidth, 0)
+    }
+    $progressBar = ('#' * $barFilled) + ('.' * ($barWidth - $barFilled))
 
-    Write-Host ('=' * 78) -ForegroundColor Magenta
-    Write-Host ("                 {0} - PRE-CHECK DE SISTEMA" -f $ServerName) -ForegroundColor Cyan
-    Write-Host ("                    Desenvolvido por: {0} | Versao {1}" -f $Author, $ScriptVersion) -ForegroundColor DarkCyan
-    Write-Host ('=' * 78) -ForegroundColor Magenta
-    Write-Host (" Windows: {0} | Build: {1}" -f $os.Caption, $os.BuildNumber) -ForegroundColor Gray
-    Write-Host (" Agora: {0:dd/MM/yyyy HH:mm:ss} | Ligado ha: {1}" -f $now, (Format-Duration $uptime)) -ForegroundColor Gray
-
+    # Header principal
     Write-Host ''
-    Write-Host '[1] AUDITORIA DE SERVICOS' -ForegroundColor Cyan
-    Write-Host (' {0,-4} {1,-14} {2,-14} {3}' -f '#', 'Servico', 'Estado', 'Detalhe') -ForegroundColor DarkGray
-    Write-Host (' ' + ('-' * 74)) -ForegroundColor DarkGray
+    Write-Host ('  ' + ('=' * 72)) -ForegroundColor DarkMagenta
+    Write-Host '                         N O X   R P' -ForegroundColor Magenta
+    Write-Host '                    SECURITY GUARD  |  PRE-CHECK' -ForegroundColor White
+    Write-Host ('                Desenvolvido por: {0}' -f $Author) -ForegroundColor DarkMagenta
+    Write-Host ('  ' + ('=' * 72)) -ForegroundColor DarkMagenta
 
+    # Informacao do computador
+    Write-Host ('  WINDOWS   {0}  (Build {1})' -f $os.Caption, $os.BuildNumber) -ForegroundColor Gray
+    Write-Host ('  DATA      {0:dd/MM/yyyy  HH:mm:ss}' -f $now) -ForegroundColor Gray
+    Write-Host ('  LIGADO    {0}' -f (Format-Duration $uptime)) -ForegroundColor Gray
+
+    # Auditoria dos servicos
+    Write-PanelTitle -Title '01  |  SERVICOS DO WINDOWS'
     $index = 1
     foreach ($result in $serviceResults) {
-        $color = Get-StatusColor -Code $result.Code
-        Write-Host (' [{0}] ' -f $index) -NoNewline -ForegroundColor DarkGray
-        Write-Host ('{0,-14} ' -f $result.Name) -NoNewline
-        Write-Host ('{0,-14} ' -f $result.Status) -NoNewline -ForegroundColor $color
-        Write-Host $result.Detail -ForegroundColor Gray
+        $number = '[{0:D2}]' -f $index
+        Write-Host ('  ' + $number + ' ') -NoNewline -ForegroundColor DarkMagenta
+        Write-CheckLine -Result $result -Prefix '  '
         $index++
     }
 
-    Write-Host ''
-    Write-Host '[2] SEGURANCA DO WINDOWS' -ForegroundColor Cyan
-    Write-Host (' {0,-4} {1,-48} {2}' -f '#', 'Componente', 'Estado') -ForegroundColor DarkGray
-    Write-Host (' ' + ('-' * 74)) -ForegroundColor DarkGray
-
-    $letterCode = 65
+    # Seguranca
+    Write-PanelTitle -Title '02  |  SEGURANCA DO WINDOWS'
     foreach ($result in $securityResults) {
-        $color = Get-StatusColor -Code $result.Code
-        Write-Host (' [{0}] ' -f [char]$letterCode) -NoNewline -ForegroundColor DarkGray
-        Write-Host ('{0,-48} ' -f $result.Name) -NoNewline
-        Write-Host $result.Status -ForegroundColor $color
-        Write-Host ('     {0}' -f $result.Detail) -ForegroundColor Gray
-        $letterCode++
+        Write-CheckLine -Result $result -Prefix '  '
     }
 
+    # Resumo
+    Write-PanelTitle -Title '03  |  RESULTADO DO PRE-CHECK'
+    Write-Host ('  PROGRESSO  [{0}]  {1}/{2} confirmados' -f $progressBar, $passedCount, $totalCount) -ForegroundColor Magenta
+    Write-Host ('  ESTADOS    {0} aprovados  |  {1} pendentes  |  {2} em falta' -f `
+        $passedCount, $pendingCount, $failedCount) -ForegroundColor Gray
     Write-Host ''
-    Write-Host ('=' * 78) -ForegroundColor Magenta
-    Write-Host (" Resumo: {0} confirmados | {1} pendentes | {2} requisitos em falta" -f `
-        $passedCount, $pendingCount, $failedCount) -ForegroundColor White
 
     if ($failedCount -gt 0) {
-        Write-Host (" RESULTADO: NAO CONFORME COM OS REQUISITOS DO PRE-CHECK DO {0}" -f $ServerName) -ForegroundColor Red
-        Write-Host ' -> Consulta os itens a vermelho e segue as instrucoes oficiais do servidor.' -ForegroundColor Yellow
+        Write-Host '  [ !! ]  REQUISITOS EM FALTA' -ForegroundColor Red
+        Write-Host '         Consulta os itens assinalados a vermelho e segue as instrucoes oficiais.' -ForegroundColor Yellow
     }
     elseif ($pendingCount -gt 0) {
-        Write-Host ' RESULTADO: VERIFICACAO PENDENTE' -ForegroundColor Yellow
-        Write-Host ' -> Existem itens que nao puderam ser confirmados. Mostra este ecra a Staff.' -ForegroundColor Yellow
-        Write-Host ' -> Amarelo nao significa, por si so, que o computador esteja reprovado.' -ForegroundColor Gray
+        Write-Host '  [ ?? ]  VERIFICACAO PENDENTE' -ForegroundColor Yellow
+        Write-Host '         Existem itens que nao puderam ser confirmados automaticamente.' -ForegroundColor Gray
+        Write-Host '         Mostra este resultado a Staff para validacao. Amarelo nao e reprovacao automatica.' -ForegroundColor Gray
     }
     else {
-        Write-Host (" RESULTADO: TODOS OS REQUISITOS VERIFICADOS - {0}" -f $ServerName) -ForegroundColor Green
+        Write-Host '  [ OK ]  TODOS OS REQUISITOS FORAM CONFIRMADOS' -ForegroundColor Green
+        Write-Host '         O computador esta pronto para a verificacao da Staff.' -ForegroundColor Gray
     }
 
+    # Nota de contexto
     Write-Host ''
-    Write-Host ' NOTA: Este e apenas um pre-check de configuracoes do Windows.' -ForegroundColor Gray
-    Write-Host ' Nao procura cheats, nao analisa ficheiros e nao substitui o PC Check da Staff.' -ForegroundColor Gray
-    Write-Host ' O script apenas consulta informacoes; nao altera configuracoes do computador.' -ForegroundColor Gray
-    Write-Host ('=' * 78) -ForegroundColor Magenta
-    Write-Host ' [R] Atualizar     [Q] Sair' -ForegroundColor White
+    Write-Host ('  ' + ('-' * 72)) -ForegroundColor DarkGray
+    Write-Host '  IMPORTANTE' -ForegroundColor White
+    Write-Host '  Este programa e apenas um PRE-CHECK de configuracoes do Windows.' -ForegroundColor DarkGray
+    Write-Host '  Nao deteta cheats, nao analisa ficheiros e nao substitui o PC Check da Staff.' -ForegroundColor DarkGray
+    Write-Host '  O script apenas consulta informacoes; nao altera configuracoes do computador.' -ForegroundColor DarkGray
+    Write-Host ('  ' + ('-' * 72)) -ForegroundColor DarkGray
+    Write-Host '  [R] Atualizar verificacao                         [Q] Sair' -ForegroundColor White
+    Write-Host ''
 }
 
 while ($true) {
     Show-PreCheck
 
-    $choice = Read-Host 'Opcao'
+    $choice = Read-Host '  Opcao'
     if ($choice -match '^[qQ]$') {
         break
     }
@@ -398,6 +449,6 @@ while ($true) {
         continue
     }
 
-    Write-Host 'Opcao invalida. Utiliza R para atualizar ou Q para sair.' -ForegroundColor Yellow
-    [void](Read-Host 'Carrega em ENTER para continuar')
+    Write-Host '  Opcao invalida. Utiliza R para atualizar ou Q para sair.' -ForegroundColor Yellow
+    [void](Read-Host '  Carrega em ENTER para continuar')
 }
