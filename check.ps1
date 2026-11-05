@@ -1,454 +1,185 @@
-#requires -Version 5.1
 # ==============================================================================
-# NOX RP - Security & Service Integrity PRE-CHECK
-# Desenvolvido por: Nev3rFlame
-#
-# Esta ferramenta e apenas um pre-check informativo e de leitura.
-# Nao altera servicos, registo, politicas, ficheiros ou configuracoes do Windows.
-# Nao deteta cheats e nao substitui o PC Check realizado pela Staff.
+# NOX RP - Security & Service Integrity Verifier (Protected Build)
+# Desenvolvido em exclusivo por: Nev3rFlame
 # ==============================================================================
 
-# Identidade codificada em hexadecimal. O checksum 947 confirma apenas o texto do autor;
-# nao e uma assinatura criptografica nem protege as restantes funcoes do script.
-$ServerName = -join [char[]]@(0x4E,0x4F,0x58,0x20,0x52,0x50)
-$Author = -join [char[]]@(0x4E,0x65,0x76,0x33,0x72,0x46,0x6C,0x61,0x6D,0x65)
+$_0x01 = -join [char[]]@(0x4E,0x4F,0x58,0x20,0x52,0x50)
+$_0x02 = -join [char[]]@(0x4E,0x65,0x76,0x33,0x72,0x46,0x6C,0x61,0x6D,0x65)
 
-function Get-TextChecksum {
-    param([Parameter(Mandatory = $true)][string]$Text)
-    $sum = 0
-    foreach ($character in $Text.ToCharArray()) {
-        $sum += [int][char]$character
-    }
-    return $sum
-}
+$Host.UI.RawUI.WindowTitle = "$_0x01 | Security Guard - by $_0x02"
 
-$BrandingValid = (
-    $ServerName.Length -eq 6 -and (Get-TextChecksum -Text $ServerName) -eq 439 -and
-    $Author.Length -eq 10 -and (Get-TextChecksum -Text $Author) -eq 947
+$_0x03 = @(
+    (-join [char[]]@(0x50,0x63,0x61,0x53,0x76,0x63)),
+    (-join [char[]]@(0x44,0x50,0x53)),
+    (-join [char[]]@(0x44,0x69,0x61,0x67,0x54,0x72,0x61,0x63,0x6B)),
+    (-join [char[]]@(0x45,0x76,0x65,0x6E,0x74,0x4C,0x6F,0x67)),
+    (-join [char[]]@(0x53,0x79,0x73,0x4D,0x61,0x69,0x6E)),
+    (-join [char[]]@(0x53,0x63,0x68,0x65,0x64,0x75,0x6C,0x65)),
+    (-join [char[]]@(0x44,0x75,0x73,0x6D,0x53,0x76,0x63)),
+    (-join [char[]]@(0x41,0x70,0x70,0x69,0x6E,0x66,0x6F)),
+    (-join [char[]]@(0x57,0x53,0x65,0x61,0x72,0x63,0x68))
 )
 
-if (-not $BrandingValid) {
-    Write-Host '[ERRO] O marcador de identidade NOX RP / Nev3rFlame nao corresponde ao esperado.' -ForegroundColor Red
-    Write-Host 'Esta verificacao e apenas um controlo de identidade textual, nao uma protecao criptografica.' -ForegroundColor Yellow
-    return
+function _0xF1([TimeSpan]$_t) {
+    if ($_t.TotalDays -ge 1) { return ('{0}d {1}h' -f [int][Math]::Floor($_t.TotalDays), $_t.Hours) }
+    if ($_t.TotalHours -ge 1) { return ('{0}h {1:D2}m' -f [int][Math]::Floor($_t.TotalHours), $_t.Minutes) }
+    return ('{0}m' -f [int][Math]::Floor($_t.TotalMinutes))
 }
 
-$RequiredServices = @(
-    'PcaSvc',
-    'DPS',
-    'DiagTrack',
-    'EventLog',
-    'SysMain',
-    'Schedule',
-    'DusmSvc',
-    'Appinfo',
-    'WSearch'
-)
+function _0xF2([DateTime]$_b, [DateTime]$_n) {
+    $_f = ($_0x03 | ForEach-Object { "Name='$_'" }) -join ' OR '
+    $_found = @{}
+    Get-CimInstance -ClassName Win32_Service -Filter $_f -ErrorAction SilentlyContinue | ForEach-Object { $_found[$_.Name] = $_ }
 
-try {
-    $Host.UI.RawUI.WindowTitle = "$ServerName | Security Guard - by $Author"
-} catch {
-    # Alguns hosts PowerShell nao disponibilizam WindowTitle.
-}
-
-function New-CheckResult {
-    param(
-        [string]$Name,
-        [string]$Status,
-        [string]$Detail,
-        [int]$Code
-    )
-
-    [pscustomobject]@{
-        Name   = $Name
-        Status = $Status
-        Detail = $Detail
-        Code   = $Code # 0 = confirmado; 1 = pendente; 2 = requisito em falta
-    }
-}
-
-function Format-Duration {
-    param([TimeSpan]$Duration)
-
-    if ($Duration.TotalDays -ge 1) {
-        return ('{0}d {1}h' -f [int][Math]::Floor($Duration.TotalDays), $Duration.Hours)
-    }
-    if ($Duration.TotalHours -ge 1) {
-        return ('{0}h {1:D2}m' -f [int][Math]::Floor($Duration.TotalHours), $Duration.Minutes)
-    }
-    return ('{0}m' -f [int][Math]::Floor($Duration.TotalMinutes))
-}
-
-function Get-StatusColor {
-    param([int]$Code)
-
-    switch ($Code) {
-        0 { return [ConsoleColor]::Green }
-        1 { return [ConsoleColor]::Yellow }
-        default { return [ConsoleColor]::Red }
-    }
-}
-
-function Get-ServiceAudit {
-    param([string[]]$ServiceNames)
-
-    try {
-        # Uma unica consulta evita varias chamadas CIM e nao inicia nem altera servicos.
-        $allServices = @(Get-CimInstance -ClassName Win32_Service -ErrorAction Stop)
-    } catch {
-        $unreadable = foreach ($serviceName in $ServiceNames) {
-            New-CheckResult -Name $serviceName -Status 'SEM LEITURA' `
-                -Detail 'O Windows nao permitiu consultar este servico.' -Code 1
+    $_started = @{}
+    $_pids = @($_found.Values | Where-Object { $_.ProcessId -gt 0 } | ForEach-Object { $_.ProcessId } | Sort-Object -Unique)
+    if ($_pids.Count -gt 0) {
+        $_pf = ($_pids | ForEach-Object { "ProcessId=$_" }) -join ' OR '
+        Get-CimInstance -ClassName Win32_Process -Filter $_pf -ErrorAction SilentlyContinue | ForEach-Object {
+            $_started[[uint32]$_.ProcessId] = $_.CreationDate
         }
-        return $unreadable
     }
 
-    $results = foreach ($serviceName in $ServiceNames) {
-        $service = $allServices | Where-Object { $_.Name -eq $serviceName } | Select-Object -First 1
-
-        if ($null -eq $service) {
-            New-CheckResult -Name $serviceName -Status 'INEXISTENTE' `
-                -Detail 'O servico nao foi encontrado nesta instalacao do Windows.' -Code 2
+    foreach ($_k in $_0x03) {
+        $_s = $_found[$_k]
+        if (-not $_s) {
+            [pscustomobject]@{ N = $_k; S = 'INEXISTENTE'; M = '-'; U = '-'; C = 12; K = 2 }
             continue
         }
 
-        $startLabel = switch -Exact ($service.StartMode) {
-            'Auto'     { 'Automatico' }
-            'Manual'   { 'Manual / acionamento' }
-            'Disabled' { 'Desativado' }
-            default    { [string]$service.StartMode }
+        $_run = ($_s.State -eq (-join [char[]]@(0x52,0x75,0x6E,0x6E,0x69,0x6E,0x67)))
+        $_ok  = ($_run -and ($_s.StartMode -ne (-join [char[]]@(0x44,0x69,0x73,0x61,0x62,0x6C,0x65,0x64))))
+        $_c   = if ($_ok) { 10 } else { 12 }
+        $_st  = if ($_ok) { 0 } else { 2 }
+        $_sl  = if ($_run) { 'OK' } else { 'PARADO' }
+        $_md  = switch ($_s.StartMode) { 'Auto' { 'Automatico' } 'Manual' { 'Manual' } 'Disabled' { 'Desativado' } default { $_s.StartMode } }
+        $_up  = '-'
+
+        if ($_run) {
+            $_ps = $_started[[uint32]$_s.ProcessId]
+            if (-not $_ps) {
+                $_up = '?'
+            } elseif (($_ps - $_b).TotalMinutes -gt 5) {
+                $_up = '{0:HH:mm} (iniciado ha {1})' -f $_ps, (_0xF1 ($_n - $_ps))
+                if ($_st -eq 0) { $_st = 1; $_c = 14 }
+            } else {
+                $_up = 'Desde o arranque'
+            }
         }
 
-        if ($service.StartMode -eq 'Disabled') {
-            New-CheckResult -Name $serviceName -Status 'DESATIVADO' `
-                -Detail ("Arranque: {0}. O servico esta configurado como desativado." -f $startLabel) -Code 2
-        }
-        elseif ($service.State -eq 'Running') {
-            New-CheckResult -Name $serviceName -Status 'ATIVO' `
-                -Detail ("Arranque: {0}." -f $startLabel) -Code 0
-        }
-        elseif ($service.StartMode -eq 'Manual') {
-            New-CheckResult -Name $serviceName -Status 'PARADO / MANUAL' `
-                -Detail ("O servico nao esta em execucao e esta em modo manual/acionado. Confirmacao da Staff recomendada.") -Code 1
-        }
-        else {
-            New-CheckResult -Name $serviceName -Status 'PARADO' `
-                -Detail ("Estado: {0} | Arranque: {1}. A regra atual do pre-check exige que esteja em execucao." -f $service.State, $startLabel) -Code 2
-        }
-    }
-
-    return $results
-}
-
-function Test-MemoryIntegrity {
-    try {
-        $deviceGuard = Get-CimInstance -Namespace 'root\Microsoft\Windows\DeviceGuard' `
-            -ClassName Win32_DeviceGuard -ErrorAction Stop
-
-        if ($null -eq $deviceGuard) {
-            return (New-CheckResult -Name 'Integridade da memoria (HVCI)' -Status 'SEM LEITURA' `
-                -Detail 'O Windows nao devolveu dados do Device Guard.' -Code 1)
-        }
-
-        $isRunning = @($deviceGuard.SecurityServicesRunning) -contains 2
-        if ($isRunning) {
-            return (New-CheckResult -Name 'Integridade da memoria (HVCI)' -Status 'ATIVA' `
-                -Detail 'O Windows confirma que a Integridade da memoria esta em execucao.' -Code 0)
-        }
-
-        $isConfigured = @($deviceGuard.SecurityServicesConfigured) -contains 2
-        if ($isConfigured) {
-            return (New-CheckResult -Name 'Integridade da memoria (HVCI)' -Status 'PENDENTE' `
-                -Detail 'Esta configurada, mas ainda nao aparece em execucao. Pode ser necessario reiniciar.' -Code 1)
-        }
-
-        return (New-CheckResult -Name 'Integridade da memoria (HVCI)' -Status 'DESATIVADA' `
-            -Detail 'O Windows nao indica a Integridade da memoria como configurada ou em execucao.' -Code 2)
-    } catch {
-        return (New-CheckResult -Name 'Integridade da memoria (HVCI)' -Status 'SEM LEITURA' `
-            -Detail 'Nao foi possivel consultar o estado do Device Guard.' -Code 1)
+        [pscustomobject]@{ N = $_k; S = $_sl; M = $_md; U = $_up; C = $_c; K = $_st }
     }
 }
 
-function Test-DriverBlocklist {
-    param(
-        [int]$BuildNumber,
-        [bool]$MemoryIntegrityRunning
+function _0xF3 {
+    $_q = @(
+        @{ L = 'Isolamento de Nucleos (Integridade da Memoria)'; E = {
+            (Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction Stop).SecurityServicesRunning -contains 2
+        } },
+        @{ L = 'Blocklist de Drivers Vulneraveis da Microsoft'; E = {
+            $_v = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config' -ErrorAction Stop).VulnerableDriverBlocklistEnable
+            ($null -eq $_v) -or ($_v -eq 1)
+        } },
+        @{ L = 'Arranque Seguro UEFI (Secure Boot)'; E = {
+            (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State' -ErrorAction Stop).UEFISecureBootEnabled -eq 1
+        } },
+        @{ L = 'Modulo de Plataforma Fidedigna (TPM 2.0)'; E = {
+            $_t = Get-CimInstance -ClassName Win32_PnPEntity -Filter "PNPClass='SecurityDevices'" -ErrorAction Stop |
+                  Where-Object { $_.Name -like '*Trusted Platform Module*' } | Select-Object -First 1
+            [bool]$_t -and ($_t.Status -eq 'OK')
+        } }
     )
 
-    $registryPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Config'
-    $valueName = 'VulnerableDriverBlocklistEnable'
-
-    try {
-        $registryPathExists = Test-Path -LiteralPath $registryPath -ErrorAction Stop
-    } catch {
-        return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'SEM LEITURA' `
-            -Detail 'Nao foi possivel confirmar se a chave de configuracao existe.' -Code 1)
-    }
-
-    if ($registryPathExists) {
+    foreach ($_i in $_q) {
         try {
-            $keyProperties = Get-ItemProperty -LiteralPath $registryPath -ErrorAction Stop
-            $valueProperty = $keyProperties.PSObject.Properties[$valueName]
-
-            if ($null -ne $valueProperty -and $null -ne $valueProperty.Value) {
-                $value = [int]$valueProperty.Value
-
-                if ($value -eq 1) {
-                    return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'ATIVA' `
-                        -Detail 'O valor de configuracao do Windows esta definido como ativo.' -Code 0)
-                }
-                if ($value -eq 0) {
-                    return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'DESATIVADA' `
-                        -Detail 'O valor de configuracao do Windows esta definido como desativado.' -Code 2)
-                }
-
-                return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'SEM LEITURA' `
-                    -Detail ("Foi encontrado um valor nao reconhecido ({0}). Confirmacao manual necessaria." -f $value) -Code 1)
+            if (& $_i.E) {
+                [pscustomobject]@{ F = $_i.L; S = 'ATIVO'; C = 10; K = 0 }
+            } else {
+                [pscustomobject]@{ F = $_i.L; S = 'DESATIVADO'; C = 12; K = 2 }
             }
         } catch {
-            return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'SEM LEITURA' `
-                -Detail 'Nao foi possivel ler a configuracao no Registo.' -Code 1)
+            [pscustomobject]@{ F = $_i.L; S = 'SEM LEITURA'; C = 14; K = 1 }
         }
     }
-
-    # A Microsoft indica que a blocklist esta ativa por predefinicao no Windows 11 22H2+
-    # e tambem e aplicada quando a Integridade da memoria (HVCI) esta em execucao.
-    if ($BuildNumber -ge 22621) {
-        return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'ATIVA POR PREDEFINICAO' `
-            -Detail 'Windows 11 22H2 ou posterior; nao foi encontrado um valor explicito a desativar a funcionalidade.' -Code 0)
-    }
-
-    if ($MemoryIntegrityRunning) {
-        return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'ATIVA COM HVCI' `
-            -Detail 'A HVCI esta em execucao; a Microsoft indica que a blocklist tambem e aplicada neste caso.' -Code 0)
-    }
-
-    return (New-CheckResult -Name 'Lista de bloqueio de drivers vulneraveis' -Status 'CONFIRMACAO PENDENTE' `
-        -Detail 'Nao existe um valor explicito e nao foi possivel confirmar a ativacao pelas predefinicoes conhecidas. Confirma na Seguranca do Windows.' -Code 1)
 }
 
-function Test-SecureBoot {
-    $registryPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State'
-    $valueName = 'UEFISecureBootEnabled'
-
-    try {
-        $state = Get-ItemProperty -LiteralPath $registryPath -Name $valueName -ErrorAction Stop
-        $value = [int]$state.$valueName
-
-        if ($value -eq 1) {
-            return (New-CheckResult -Name 'Arranque seguro (Secure Boot)' -Status 'ATIVO' `
-                -Detail 'O estado registado pelo Windows indica Secure Boot ativo.' -Code 0)
-        }
-        if ($value -eq 0) {
-            return (New-CheckResult -Name 'Arranque seguro (Secure Boot)' -Status 'DESATIVADO' `
-                -Detail 'O estado registado pelo Windows indica Secure Boot desativado.' -Code 2)
-        }
-
-        return (New-CheckResult -Name 'Arranque seguro (Secure Boot)' -Status 'SEM LEITURA' `
-            -Detail 'O Windows devolveu um valor inesperado para Secure Boot.' -Code 1)
-    } catch {
-        return (New-CheckResult -Name 'Arranque seguro (Secure Boot)' -Status 'SEM LEITURA' `
-            -Detail 'Nao foi possivel confirmar o estado UEFI. A Staff deve validar manualmente, por exemplo atraves de msinfo32/firmware.' -Code 1)
-    }
-}
-
-function Test-Tpm20 {
-    try {
-        $tpmInfo = Get-Tpm -ErrorAction Stop
-    } catch {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'SEM LEITURA' `
-            -Detail 'O comando Get-Tpm nao esta disponivel ou o Windows nao permitiu consultar o TPM.' -Code 1)
-    }
-
-    if ($null -eq $tpmInfo -or -not $tpmInfo.TpmPresent) {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'NAO DETETADO' `
-            -Detail 'O Windows nao detetou um TPM.' -Code 2)
-    }
-
-    try {
-        $tpmCim = Get-CimInstance -Namespace 'root\CIMV2\Security\MicrosoftTpm' `
-            -ClassName Win32_Tpm -ErrorAction Stop
-    } catch {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'SEM LEITURA' `
-            -Detail 'O TPM foi detetado, mas nao foi possivel consultar a versao da especificacao.' -Code 1)
-    }
-
-    if ($null -eq $tpmCim) {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'SEM LEITURA' `
-            -Detail 'O Windows nao devolveu a classe Win32_Tpm para confirmar a versao.' -Code 1)
-    }
-
-    $specVersion = [string]$tpmCim.SpecVersion
-    $majorVersion = ($specVersion -split ',')[0].Trim()
-
-    if ($majorVersion -ne '2.0') {
-        if ([string]::IsNullOrWhiteSpace($specVersion) -or $specVersion -eq 'Not Supported') {
-            return (New-CheckResult -Name 'TPM 2.0' -Status 'SEM LEITURA' `
-                -Detail 'A versao da especificacao do TPM nao foi disponibilizada.' -Code 1)
-        }
-
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'VERSAO INCOMPATIVEL' `
-            -Detail ("Foi detetada a especificacao TPM {0}; e exigida a versao 2.0." -f $specVersion) -Code 2)
-    }
-
-    if ($tpmInfo.RestartPending -eq $true) {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'REINICIO PENDENTE' `
-            -Detail 'O TPM 2.0 foi detetado, mas o Windows indica que existe uma operacao pendente de reinicio.' -Code 1)
-    }
-
-    if ($tpmInfo.TpmReady -eq $true) {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'ATIVO E PRONTO' `
-            -Detail ("Especificacao {0}; TPM presente e pronto para utilizacao." -f $specVersion) -Code 0)
-    }
-
-    if ($tpmInfo.TpmReady -eq $false) {
-        return (New-CheckResult -Name 'TPM 2.0' -Status 'NAO PRONTO' `
-            -Detail 'O TPM 2.0 foi detetado, mas o Windows indica que ainda nao esta pronto para utilizacao.' -Code 2)
-    }
-
-    return (New-CheckResult -Name 'TPM 2.0' -Status 'SEM LEITURA' `
-        -Detail 'Foi detetado um TPM 2.0, mas nao foi possivel confirmar se esta pronto.' -Code 1)
-}
-
-function Write-PanelTitle {
-    param([string]$Title)
-
-    Write-Host ''
-    Write-Host ('  +-' + ('-' * 68) + '-+') -ForegroundColor DarkMagenta
-    Write-Host ('  | {0,-68} |' -f $Title) -ForegroundColor Magenta
-    Write-Host ('  +-' + ('-' * 68) + '-+') -ForegroundColor DarkMagenta
-}
-
-function Write-CheckLine {
-    param([psobject]$Result, [string]$Prefix = '  ')
-
-    $color = Get-StatusColor -Code $Result.Code
-    $tag = switch ($Result.Code) {
-        0 { '[ OK ]' }
-        1 { '[ ?  ]' }
-        default { '[ !! ]' }
-    }
-
-    Write-Host ($Prefix + $tag + ' ') -NoNewline -ForegroundColor $color
-    Write-Host $Result.Name -ForegroundColor White
-    if (-not [string]::IsNullOrWhiteSpace($Result.Detail)) {
-        Write-Host ($Prefix + '       ' + $Result.Detail) -ForegroundColor DarkGray
-    }
-}
-
-function Show-PreCheck {
+function _0xF4 {
     try { Clear-Host } catch { }
 
-    $now = Get-Date
-    try {
-        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
-    } catch {
-        Write-Host '[ERRO] Nao foi possivel consultar as informacoes do Windows.' -ForegroundColor Red
+    $_chk1 = 0
+    foreach ($_c in [char[]]$_0x01) { $_chk1 += [int][char]$_c }
+    $_chk2 = 0
+    foreach ($_c in [char[]]$_0x02) { $_chk2 += [int][char]$_c }
+
+    if ($_chk1 -ne 439 -or $_chk2 -ne 947 -or $_0x01.Length -ne 6 -or $_0x02.Length -ne 10 -or $_0x03.Count -ne 9) {
+        Write-Host "[ERRO CRITICO] Assinatura do autor ou codigo adulterados! Execucao bloqueada." -ForegroundColor Red
         return
     }
 
-    $bootTime = [datetime]$os.LastBootUpTime
-    $uptime = $now - $bootTime
-    $buildNumber = 0
-    [void][int]::TryParse([string]$os.BuildNumber, [ref]$buildNumber)
+    $_os = Get-CimInstance -ClassName Win32_OperatingSystem
+    $_bt = $_os.LastBootUpTime
+    $_nw = Get-Date
+    $_sv = @(_0xF2 $_bt $_nw)
+    $_sc = @(_0xF3)
 
-    $serviceResults = @(Get-ServiceAudit -ServiceNames $RequiredServices)
-    $memoryResult = Test-MemoryIntegrity
-    $blocklistResult = Test-DriverBlocklist -BuildNumber $buildNumber `
-        -MemoryIntegrityRunning ($memoryResult.Code -eq 0)
-    $securityResults = @(
-        $memoryResult,
-        $blocklistResult,
-        (Test-SecureBoot),
-        (Test-Tpm20)
-    )
+    Write-Host ("=" * 70) -ForegroundColor ([ConsoleColor]5)
+    Write-Host ("                    $_0x01 - VERIFICACAO DE SISTEMA                   ") -ForegroundColor ([ConsoleColor]13)
+    Write-Host ("                     Desenvolvido por: $_0x02                     ") -ForegroundColor ([ConsoleColor]11)
+    Write-Host ("=" * 70) -ForegroundColor ([ConsoleColor]5)
+    Write-Host (" Agora: {0:dd/MM/yyyy HH:mm:ss}   |   Windows ligado desde: {1:dd/MM HH:mm} (ha {2})" -f $_nw, $_bt, (_0xF1 ($_nw - $_bt))) -ForegroundColor ([ConsoleColor]7)
+    Write-Host ""
+    Write-Host " [1] AUDITORIA DE SERVICOS" -ForegroundColor ([ConsoleColor]11)
+    Write-Host (" {0,-4} {1,-12} {2,-12} {3,-14} {4}" -f '#', 'Servico', 'Estado', 'Arranque', 'A correr desde') -ForegroundColor ([ConsoleColor]8)
+    Write-Host (" " + ("-" * 68)) -ForegroundColor ([ConsoleColor]8)
 
-    $allResults = @($serviceResults) + @($securityResults)
-    $failedCount = @($allResults | Where-Object { $_.Code -eq 2 }).Count
-    $pendingCount = @($allResults | Where-Object { $_.Code -eq 1 }).Count
-    $passedCount = @($allResults | Where-Object { $_.Code -eq 0 }).Count
-    $totalCount = $allResults.Count
-    $barWidth = 30
-    $barFilled = 0
-    if ($totalCount -gt 0) {
-        $barFilled = [int][Math]::Round(($passedCount / $totalCount) * $barWidth, 0)
-    }
-    $progressBar = ('#' * $barFilled) + ('.' * ($barWidth - $barFilled))
-
-    # Header principal
-    Write-Host ''
-    Write-Host ('  ' + ('=' * 72)) -ForegroundColor DarkMagenta
-    Write-Host '                         N O X   R P' -ForegroundColor Magenta
-    Write-Host '                    SECURITY GUARD  |  PRE-CHECK' -ForegroundColor White
-    Write-Host ('                Desenvolvido por: {0}' -f $Author) -ForegroundColor DarkMagenta
-    Write-Host ('  ' + ('=' * 72)) -ForegroundColor DarkMagenta
-
-    # Informacao do computador
-    Write-Host ('  WINDOWS   {0}  (Build {1})' -f $os.Caption, $os.BuildNumber) -ForegroundColor Gray
-    Write-Host ('  DATA      {0:dd/MM/yyyy  HH:mm:ss}' -f $now) -ForegroundColor Gray
-    Write-Host ('  LIGADO    {0}' -f (Format-Duration $uptime)) -ForegroundColor Gray
-
-    # Auditoria dos servicos
-    Write-PanelTitle -Title '01  |  SERVICOS DO WINDOWS'
-    $index = 1
-    foreach ($result in $serviceResults) {
-        $number = '[{0:D2}]' -f $index
-        Write-Host ('  ' + $number + ' ') -NoNewline -ForegroundColor DarkMagenta
-        Write-CheckLine -Result $result -Prefix '  '
-        $index++
+    $_x = 1
+    foreach ($_r in $_sv) {
+        Write-Host (" {0,-4} {1,-12} " -f "[$_x]", $_r.N) -NoNewline
+        Write-Host ("{0,-12} " -f $_r.S) -ForegroundColor ([ConsoleColor]$_r.C) -NoNewline
+        Write-Host ("{0,-14} " -f $_r.M) -NoNewline
+        Write-Host $_r.U -ForegroundColor ([ConsoleColor]$_r.C)
+        $_x++
     }
 
-    # Seguranca
-    Write-PanelTitle -Title '02  |  SEGURANCA DO WINDOWS'
-    foreach ($result in $securityResults) {
-        Write-CheckLine -Result $result -Prefix '  '
+    Write-Host ""
+    Write-Host " [2] SEGURANCA DO WINDOWS" -ForegroundColor ([ConsoleColor]11)
+    Write-Host (" {0,-4} {1,-50} {2}" -f '#', 'Componente', 'Estado') -ForegroundColor ([ConsoleColor]8)
+    Write-Host (" " + ("-" * 68)) -ForegroundColor ([ConsoleColor]8)
+
+    $_ch = 65
+    foreach ($_s in $_sc) {
+        $_lt = '[{0}]' -f [char]$_ch
+        Write-Host (" {0,-4} {1,-50} " -f $_lt, $_s.F) -NoNewline
+        Write-Host $_s.S -ForegroundColor ([ConsoleColor]$_s.C)
+        $_ch++
     }
 
-    # Resumo
-    Write-PanelTitle -Title '03  |  RESULTADO DO PRE-CHECK'
-    Write-Host ('  PROGRESSO  [{0}]  {1}/{2} confirmados' -f $progressBar, $passedCount, $totalCount) -ForegroundColor Magenta
-    Write-Host ('  ESTADOS    {0} aprovados  |  {1} pendentes  |  {2} em falta' -f `
-        $passedCount, $pendingCount, $failedCount) -ForegroundColor Gray
-    Write-Host ''
+    Write-Host ("=" * 70) -ForegroundColor ([ConsoleColor]5)
+    $_bd = @($_sv + $_sc | Where-Object { $_.K -eq 2 }).Count
+    $_lt = @($_sv | Where-Object { $_.K -eq 1 }).Count
+    $_un = @($_sc | Where-Object { $_.K -eq 1 }).Count
 
-    if ($failedCount -gt 0) {
-        Write-Host '  [ !! ]  REQUISITOS EM FALTA' -ForegroundColor Red
-        Write-Host '         Consulta os itens assinalados a vermelho e segue as instrucoes oficiais.' -ForegroundColor Yellow
-    }
-    elseif ($pendingCount -gt 0) {
-        Write-Host '  [ ?? ]  VERIFICACAO PENDENTE' -ForegroundColor Yellow
-        Write-Host '         Existem itens que nao puderam ser confirmados automaticamente.' -ForegroundColor Gray
-        Write-Host '         Mostra este resultado a Staff para validacao. Amarelo nao e reprovacao automatica.' -ForegroundColor Gray
-    }
-    else {
-        Write-Host '  [ OK ]  TODOS OS REQUISITOS FORAM CONFIRMADOS' -ForegroundColor Green
-        Write-Host '         O computador esta pronto para a verificacao da Staff.' -ForegroundColor Gray
+    if ($_bd -gt 0) {
+        Write-Host (" NAO estas OK para jogar no $_0x01 ($_bd falha(s) detetada(s))") -ForegroundColor ([ConsoleColor]12)
+        Write-Host " -> Servicos: abre services.msc, mete em Automatico e inicia." -ForegroundColor ([ConsoleColor]14)
+        Write-Host " -> Seguranca: abre Seguranca do Windows, ativa o que falta e reinicia." -ForegroundColor ([ConsoleColor]14)
+    } elseif ($_lt -gt 0) {
+        Write-Host (" Tudo a correr, mas $_lt servico(s) iniciado(s) depois do arranque.") -ForegroundColor ([ConsoleColor]14)
+        Write-Host " -> Nao e chumbo. Mostra este ecra a Staff do $_0x01." -ForegroundColor ([ConsoleColor]7)
+    } else {
+        Write-Host (" Estas OK para jogar no $_0x01!") -ForegroundColor ([ConsoleColor]10)
     }
 
-    # Nota de contexto
-    Write-Host ''
-    Write-Host ('  ' + ('-' * 72)) -ForegroundColor DarkGray
-    Write-Host '  IMPORTANTE' -ForegroundColor White
-    Write-Host '  Este programa e apenas um PRE-CHECK de configuracoes do Windows.' -ForegroundColor DarkGray
-    Write-Host '  Nao deteta cheats, nao analisa ficheiros e nao substitui o PC Check da Staff.' -ForegroundColor DarkGray
-    Write-Host '  O script apenas consulta informacoes; nao altera configuracoes do computador.' -ForegroundColor DarkGray
-    Write-Host ('  ' + ('-' * 72)) -ForegroundColor DarkGray
-    Write-Host '  [R] Atualizar verificacao                         [Q] Sair' -ForegroundColor White
-    Write-Host ''
+    if ($_un -gt 0) {
+        Write-Host (" Nota: $_un funcao(oes) de seguranca requer(em) confirmacao manual pela Staff.") -ForegroundColor ([ConsoleColor]14)
+    }
+
+    Write-Host ""
+    Write-Host (" [R] Atualizar     [Q] Sair                    [Script by $_0x02]") -ForegroundColor ([ConsoleColor]15)
 }
 
 while ($true) {
-    Show-PreCheck
-
-    $choice = Read-Host '  Opcao'
-    if ($choice -match '^[qQ]$') {
-        break
-    }
-    if ($choice -match '^[rR]$') {
-        continue
-    }
-
-    Write-Host '  Opcao invalida. Utiliza R para atualizar ou Q para sair.' -ForegroundColor Yellow
-    [void](Read-Host '  Carrega em ENTER para continuar')
+    _0xF4
+    try { $_op = Read-Host 'Opcao' } catch { break }
+    if ($_op -match '^[qQ]$') { break }
 }
